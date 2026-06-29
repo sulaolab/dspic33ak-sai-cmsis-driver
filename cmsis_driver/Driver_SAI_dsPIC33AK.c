@@ -38,12 +38,37 @@
 #include <string.h>
 
 #include "Driver_SAI_dsPIC33AK.h"
-#include "RTE_Device_SAI_dsPIC33AK_example.h"
 #include "dspic33ak_spi_i2s_tdm.h"
+#include "dspic33ak_dma.h"   // RX-DMA IRQ guard around copy-layer state updates
+
+/* RTE configuration header. Defaults to the bundled SAI-only example so this repo
+ * builds as-is; an integrating project points it at its own RTE_Device.h with
+ *   -DDRIVER_SAI_DSPIC33AK_RTE_HEADER=\"RTE_Device.h\"
+ * (more portable than relying on __has_include on every toolchain). */
+#ifndef DRIVER_SAI_DSPIC33AK_RTE_HEADER
+#define DRIVER_SAI_DSPIC33AK_RTE_HEADER "RTE_Device_SAI_dsPIC33AK_example.h"
+#endif
+#include DRIVER_SAI_DSPIC33AK_RTE_HEADER
 
 /* This wrapper's implementation version. The CMSIS SAI API version it conforms to
  * is ARM_SAI_API_VERSION (1.2). */
 #define DRIVER_SAI_DSPIC33AK_VERSION  ARM_DRIVER_VERSION_MAJOR_MINOR(1, 0)
+
+/* The HAL's static DMA ping-pong geometry is fixed at compile time by
+ * DSPIC33AK_TDM_SLOTS_PER_FS (from conf.h): 2 = I2S, 8 = TDM8. This wrapper can
+ * only realise the ONE protocol that matches the compiled geometry --
+ * tdm_config_is_supported() rejects a slots_per_fs that differs from the leg's
+ * built-in geometry. So advertise/accept exactly that protocol, never both. */
+#if   (DSPIC33AK_TDM_SLOTS_PER_FS == 2)
+  #define SAI0_CAP_PROTOCOL_I2S    1u
+  #define SAI0_CAP_PROTOCOL_USER   0u
+#elif (DSPIC33AK_TDM_SLOTS_PER_FS == 8)
+  #define SAI0_CAP_PROTOCOL_I2S    0u
+  #define SAI0_CAP_PROTOCOL_USER   1u
+#else
+  #define SAI0_CAP_PROTOCOL_I2S    0u
+  #define SAI0_CAP_PROTOCOL_USER   0u
+#endif
 
 /* ========================================================================== */
 /* Driver version and capabilities                                            */
@@ -51,25 +76,26 @@
 
 static const ARM_DRIVER_VERSION sai_driver_version = {
     ARM_SAI_API_VERSION,             /* api: CMSIS SAI API version (1.2) */
-    DRIVER_SAI_DSPIC33AK_VERSION     /* drv: this wrapper's version (0.1) */
+    DRIVER_SAI_DSPIC33AK_VERSION     /* drv: this wrapper's version (1.0) */
 };
 
-/* Validated envelope only: a single standalone full-duplex stream, I2S or TDM
- * (user protocol), external MCLK input. No justified/PCM/AC97, no mono/companding,
- * no FRAME_ERROR event (FRMERR unverified in the slave-framed config). */
+/* Validated envelope only: a single standalone full-duplex stream, external MCLK
+ * input, no justified/PCM/AC97, no mono/companding, no FRAME_ERROR event (FRMERR
+ * unverified in the slave-framed config). The protocol advertised (I2S vs TDM8)
+ * tracks the compiled HAL geometry -- only one is realisable per build. */
 static const ARM_SAI_CAPABILITIES sai_capabilities = {
-    1u, /* asynchronous       (standalone stream)        */
-    0u, /* synchronous                                   */
-    1u, /* protocol_user      (TDM8)                     */
-    1u, /* protocol_i2s                                  */
-    0u, /* protocol_justified                            */
-    0u, /* protocol_pcm                                  */
-    0u, /* protocol_ac97                                 */
-    0u, /* mono_mode                                     */
-    0u, /* companding                                    */
-    1u, /* mclk_pin           (external MCLK input)      */
-    0u, /* event_frame_error                             */
-    0u  /* reserved                                      */
+    1u,                     /* asynchronous       (standalone stream)        */
+    0u,                     /* synchronous                                   */
+    SAI0_CAP_PROTOCOL_USER, /* protocol_user      (TDM8; iff SLOTS_PER_FS=8) */
+    SAI0_CAP_PROTOCOL_I2S,  /* protocol_i2s       (iff SLOTS_PER_FS=2)       */
+    0u,                     /* protocol_justified                            */
+    0u,                     /* protocol_pcm                                  */
+    0u,                     /* protocol_ac97                                 */
+    0u,                     /* mono_mode                                     */
+    0u,                     /* companding                                    */
+    1u,                     /* mclk_pin           (external MCLK input)      */
+    0u,                     /* event_frame_error                             */
+    0u                      /* reserved                                      */
 };
 
 /* ========================================================================== */
@@ -290,9 +316,17 @@ static int32_t SAI0_PowerControl(ARM_POWER_STATE state)
     }
 }
 
+/* The RX DMA channel whose ISR runs sai0_block_bridge(). The wrapper guards its
+ * multi-word ctx updates (pointers + 32-bit counters) against that ISR with this
+ * channel's CPU-IRQ mask: dsPIC33 is a 16-bit core, so a 32-bit pointer/count
+ * store is not atomic versus the bridge. Single-instance mapping (SAI0 -> SPI1),
+ * so the channel comes straight from conf.h. */
+#define SAI0_RX_DMA_CH  (DSPIC33AK_TDM_SPI1_RX_DMA)
+
 static int32_t SAI0_Send(const void *data, uint32_t num)
 {
     sai_ctx_t *ctx = &sai0_ctx;
+    bool was;
 
     if (!ctx->initialized || !ctx->powered) {
         return ARM_DRIVER_ERROR;
@@ -300,9 +334,9 @@ static int32_t SAI0_Send(const void *data, uint32_t num)
     if ((data == NULL) || (num == 0u)) {
         return ARM_DRIVER_ERROR_PARAMETER;
     }
-    /* Skeleton: block-aligned transfers only. num must be a whole number of HAL
-     * ping-pong blocks so a finite transfer cannot end mid-block (which would look
-     * like a spurious tx_underflow). */
+    /* Block-aligned transfers only. num must be a whole number of HAL ping-pong
+     * blocks so a finite transfer cannot end mid-block (which would look like a
+     * spurious tx_underflow). */
     if (ctx->block_samples == 0u) {
         return ARM_DRIVER_ERROR;
     }
@@ -314,22 +348,26 @@ static int32_t SAI0_Send(const void *data, uint32_t num)
     }
 
     /* CMSIS-SAI contract: this wrapper does NOT deep-copy at Send() time -- the block
-     * bridge reads `data` progressively, one ping-pong block per DMA0 tick. So the
+     * bridge reads `data` progressively, one ping-pong block per DMA tick. So the
      * caller buffer MUST remain valid AND UNMODIFIED until ARM_SAI_EVENT_SEND_COMPLETE
      * (here SEND_COMPLETE means "the wrapper will no longer read this buffer"). A
      * continuous stream must therefore double-buffer: only refill a buffer after its
      * SEND_COMPLETE, never the one still in flight (a single shared RX/TX buffer
-     * overwritten on RECEIVE_COMPLETE caused intermittent dropouts -- the "ghost"). */
+     * overwritten on RECEIVE_COMPLETE caused intermittent dropouts -- the "ghost").
+     * Arm under the RX-DMA IRQ mask so the bridge cannot observe a half-updated set. */
+    was = dspic33ak_dma_irq_disable_save(SAI0_RX_DMA_CH);
     ctx->tx_underflow = 0u;
     ctx->tx_cnt       = 0u;
     ctx->tx_num       = num;
     ctx->tx_buf       = (const int32_t *)data;
+    dspic33ak_dma_irq_restore(SAI0_RX_DMA_CH, was);
     return ARM_DRIVER_OK;
 }
 
 static int32_t SAI0_Receive(void *data, uint32_t num)
 {
     sai_ctx_t *ctx = &sai0_ctx;
+    bool was;
 
     if (!ctx->initialized || !ctx->powered) {
         return ARM_DRIVER_ERROR;
@@ -337,7 +375,7 @@ static int32_t SAI0_Receive(void *data, uint32_t num)
     if ((data == NULL) || (num == 0u)) {
         return ARM_DRIVER_ERROR_PARAMETER;
     }
-    /* Skeleton: block-aligned transfers only (see Send). */
+    /* Block-aligned transfers only (see Send). */
     if (ctx->block_samples == 0u) {
         return ARM_DRIVER_ERROR;
     }
@@ -348,21 +386,34 @@ static int32_t SAI0_Receive(void *data, uint32_t num)
         return ARM_DRIVER_ERROR_BUSY;
     }
 
+    /* Arm under the RX-DMA IRQ mask so the bridge cannot observe a half-updated set. */
+    was = dspic33ak_dma_irq_disable_save(SAI0_RX_DMA_CH);
     ctx->rx_overflow = 0u;
     ctx->rx_cnt      = 0u;
     ctx->rx_num      = num;
     ctx->rx_buf      = (int32_t *)data;
+    dspic33ak_dma_irq_restore(SAI0_RX_DMA_CH, was);
     return ARM_DRIVER_OK;
 }
 
+/* The bridge updates tx_cnt/rx_cnt in RX-DMA ISR context; a 32-bit read on this
+ * 16-bit core can tear, so snapshot under the IRQ mask. */
 static uint32_t SAI0_GetTxCount(void)
 {
-    return sai0_ctx.tx_cnt;
+    uint32_t v;
+    bool was = dspic33ak_dma_irq_disable_save(SAI0_RX_DMA_CH);
+    v = sai0_ctx.tx_cnt;
+    dspic33ak_dma_irq_restore(SAI0_RX_DMA_CH, was);
+    return v;
 }
 
 static uint32_t SAI0_GetRxCount(void)
 {
-    return sai0_ctx.rx_cnt;
+    uint32_t v;
+    bool was = dspic33ak_dma_irq_disable_save(SAI0_RX_DMA_CH);
+    v = sai0_ctx.rx_cnt;
+    dspic33ak_dma_irq_restore(SAI0_RX_DMA_CH, was);
+    return v;
 }
 
 /* Parse a CONFIGURE_TX/RX control word against the validated envelope and apply it
@@ -420,13 +471,22 @@ static int32_t sai0_configure(sai_ctx_t *ctx, uint32_t control, uint32_t arg1, u
         return ARM_SAI_ERROR_MCLK_PIN;
     }
 
-    /* Protocol -> format + slot count (validated envelope). */
+    /* Protocol -> format + slot count (validated envelope). Only the protocol that
+     * matches the compiled HAL geometry (DSPIC33AK_TDM_SLOTS_PER_FS) is realisable;
+     * the other is not advertised in capabilities and is rejected here too, so the
+     * accepted set matches the advertised set exactly (no configure() surprise). */
     proto = control & ARM_SAI_PROTOCOL_Msk;
     if (proto == ARM_SAI_PROTOCOL_I2S) {
+        if (SAI0_CAP_PROTOCOL_I2S == 0u) {
+            return ARM_SAI_ERROR_PROTOCOL;   /* this build's geometry is not I2S */
+        }
         cfg.format       = DSPIC33AK_SPI_I2S_TDM_FORMAT_I2S;
         cfg.slots_per_fs = 2u;
         /* arg1 framing/slot fields are User-Protocol-only (ignored for I2S). */
     } else if (proto == ARM_SAI_PROTOCOL_USER) {
+        if (SAI0_CAP_PROTOCOL_USER == 0u) {
+            return ARM_SAI_ERROR_PROTOCOL;   /* this build's geometry is not TDM8 */
+        }
         uint32_t slots = (((arg1 & ARM_SAI_SLOT_COUNT_Msk) >> ARM_SAI_SLOT_COUNT_Pos) + 1u);
         uint32_t slotsz = arg1 & ARM_SAI_SLOT_SIZE_Msk;
         if (slots != 8u) {
@@ -498,6 +558,11 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
     switch (control & ARM_SAI_CONTROL_Msk) {
     case ARM_SAI_CONFIGURE_TX:
     case ARM_SAI_CONFIGURE_RX:
+        /* CONFIGURE_TX and CONFIGURE_RX configure the SAME full-duplex transport
+         * (no true independent per-direction config). Call either, or call both
+         * with identical parameters; a second, differing CONFIGURE just re-applies
+         * (last wins) -- and since only the compiled-geometry protocol is accepted,
+         * a TX=I2S / RX=TDM8 mix on one build is rejected by sai0_configure(). */
         return sai0_configure(ctx, control, arg1, arg2);
 
     case ARM_SAI_CONTROL_TX:
@@ -537,13 +602,21 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
         }
         return ARM_DRIVER_OK;
 
-    case ARM_SAI_ABORT_SEND:
+    case ARM_SAI_ABORT_SEND: {
+        /* Clear the transfer under the RX-DMA IRQ mask so the bridge cannot read a
+         * half-cleared set (and cannot fetch from a buffer being abandoned). */
+        bool was = dspic33ak_dma_irq_disable_save(SAI0_RX_DMA_CH);
         ctx->tx_buf = NULL; ctx->tx_num = 0u; ctx->tx_cnt = 0u;
+        dspic33ak_dma_irq_restore(SAI0_RX_DMA_CH, was);
         return ARM_DRIVER_OK;
+    }
 
-    case ARM_SAI_ABORT_RECEIVE:
+    case ARM_SAI_ABORT_RECEIVE: {
+        bool was = dspic33ak_dma_irq_disable_save(SAI0_RX_DMA_CH);
         ctx->rx_buf = NULL; ctx->rx_num = 0u; ctx->rx_cnt = 0u;
+        dspic33ak_dma_irq_restore(SAI0_RX_DMA_CH, was);
         return ARM_DRIVER_OK;
+    }
 
     /* No per-slot mask mechanism in the HAL. */
     case ARM_SAI_MASK_SLOTS_TX:
@@ -557,13 +630,18 @@ static ARM_SAI_STATUS SAI0_GetStatus(void)
 {
     sai_ctx_t *ctx = &sai0_ctx;
     ARM_SAI_STATUS status = {0};
+    bool was;
 
-    /* A direction is "busy" while a Send/Receive transfer is in progress (which can
+    /* Snapshot the bridge-updated fields under the RX-DMA IRQ mask so busy/sticky
+     * flags are read as one coherent set (no torn 32-bit reads, no mid-update view).
+     * A direction is "busy" while a Send/Receive transfer is in progress (which can
      * only advance while the stream is running). */
+    was = dspic33ak_dma_irq_disable_save(SAI0_RX_DMA_CH);
     status.tx_busy      = ((ctx->tx_buf != NULL) && (ctx->tx_cnt < ctx->tx_num)) ? 1u : 0u;
     status.rx_busy      = ((ctx->rx_buf != NULL) && (ctx->rx_cnt < ctx->rx_num)) ? 1u : 0u;
     status.tx_underflow = ctx->tx_underflow;
     status.rx_overflow  = ctx->rx_overflow;
+    dspic33ak_dma_irq_restore(SAI0_RX_DMA_CH, was);
     status.frame_error  = 0u;   /* FRMERR unverified in the slave-framed config */
     return status;
 }
