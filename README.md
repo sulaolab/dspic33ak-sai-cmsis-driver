@@ -81,7 +81,11 @@ commit). Apply HAL changes upstream first, then re-sync with
      supported-rate allow-list for `ARM_SAI_AUDIO_FREQ`. The weak default accepts
      only `RTE_SAI0_DEFAULT_SAMPLE_RATE_HZ`.
    (Same pattern as the I2C wrapper's `Driver_I2C_dsPIC33AK_GetMs()`.)
-4. Own the DMA RX interrupt vector as the HAL documents (turnkey by default; see
+4. Register the board/clock port with `dspic33ak_spi_i2s_tdm_set_port()` **before**
+   `Control(CONFIGURE_*)` / `Control(CONTROL_TX/RX)` if your board needs PPS pin
+   routing, CLC pass-through, or external-clock readiness gating (board-specific;
+   the wrapper does not register it for you).
+5. Own the DMA RX interrupt vector as the HAL documents (turnkey by default; see
    the HAL's `DSPIC33AK_TDM_DEFINE_DMA_VECTORS`).
 
 See `cmsis_driver/README.md` for the validated envelope, the Send/Receive copy
@@ -92,10 +96,13 @@ layer, and usage.
 Verified live (full-duplex I2S/TDM loopback) on **dsPIC33AK512MPS512** in the
 Perseus integration project. The wrapper advertises and accepts **only** the
 HAL's validated envelope: dsPIC33AK SPI **slave**, external BCLK/FS/MCLK, 32-bit
-word/slot, I2S (2 slots) or TDM8 (8 slots). Master clock, `DATA_SIZE` 16/24,
-justified/PCM/AC97, mono/companding, slot offset/mask, `FRAME_ERROR`, dynamic
-sample-rate switching, and true independent per-direction TX/RX are not
-implemented (they mirror the HAL's validated envelope).
+word/slot, and **either** I2S (2 slots) **or** TDM8 (8 slots) — whichever matches
+the compiled HAL geometry (`DSPIC33AK_TDM_SLOTS_PER_FS`); a single build realises
+one protocol, and `GetCapabilities`/`Control` advertise/accept exactly that one.
+Master clock, `DATA_SIZE` 16/24, justified/PCM/AC97, mono/companding, slot
+offset/mask, `FRAME_ERROR`, dynamic sample-rate switching, and true independent
+per-direction TX/RX are not implemented (they mirror the HAL's validated
+envelope).
 
 ## License
 

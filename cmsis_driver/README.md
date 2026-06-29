@@ -20,7 +20,12 @@ validates (mirrors `tdm_config_is_supported()`):
 
 - dsPIC33AK SPI **slave**, external BCLK / FS / MCLK
 - 32-bit word and slot
-- `ARM_SAI_PROTOCOL_I2S` (2 slots) or `ARM_SAI_PROTOCOL_USER` = TDM8 (8 slots)
+- `ARM_SAI_PROTOCOL_I2S` (2 slots) **or** `ARM_SAI_PROTOCOL_USER` = TDM8 (8 slots),
+  **whichever matches the compiled HAL geometry** (`DSPIC33AK_TDM_SLOTS_PER_FS`:
+  2 → I2S, 8 → TDM8). Only that one protocol is advertised by `GetCapabilities`
+  and accepted by `Control`; the other returns `ARM_SAI_ERROR_PROTOCOL`. The HAL's
+  DMA ping-pong geometry is static per build, so a single binary realises one
+  protocol — rebuild with the other `slots_per_fs` to switch.
 - MSB-first, default clock polarity, asynchronous (standalone)
 
 `ARM_SAI_AUDIO_FREQ` (arg2) is checked against the integrator rate hook (see
@@ -36,7 +41,10 @@ below); it is **not** passed to the rate-agnostic HAL core.
   - `ARM_SAI_CONFIGURE_TX/RX` — applies protocol/slot count via the HAL
     `configure()` **while stopped**, seeded from the integrator's default config
     (see hooks). Settings outside the validated envelope are rejected with the
-    matching `ARM_SAI_ERROR_*` rather than silently ignored.
+    matching `ARM_SAI_ERROR_*` rather than silently ignored. **`CONFIGURE_TX` and
+    `CONFIGURE_RX` configure the same full-duplex transport** (no independent
+    per-direction config): call either, or call both with identical parameters; a
+    differing second configure just re-applies (last wins).
   - `ARM_SAI_CONTROL_TX/RX` (arg1 bit0 = enable) — whole-stream, full-duplex
     `open`/`start` and `stop`/`close`.
   - `ARM_SAI_ABORT_SEND/RECEIVE` — cancels the wrapper's copy-layer transfer.
@@ -84,6 +92,22 @@ declares the default high-level attributes (`RTE_SAI0_DEFAULT_PROTOCOL_I2S`,
 `RTE_SAI0_DEFAULT_SAMPLE_RATE_HZ`). Board-electrical fields and block geometry
 come from the integrator's default config (the `GetDefaultConfig` hook), not from
 RTE. Copy the needed definitions into your application's `RTE_Device.h`.
+
+## Board port
+
+The transport HAL reaches board pin/PPS routing, CLC pass-through, and external
+clock readiness only through a registered port
+(`dspic33ak_spi_i2s_tdm_set_port()`). If your board needs any of these, register
+the port **before** `Control(CONFIGURE_*)` / `Control(CONTROL_TX/RX)` — the
+wrapper does not register it for you (it is board-specific). See the HAL README.
+
+## A note on `ARM_SAI_MCLK_PIN`
+
+This wrapper is slave-only: it accepts `ARM_SAI_MCLK_PIN_INPUT` or
+`ARM_SAI_MCLK_PIN_INACTIVE` and rejects MCLK output (master-mode). CMSIS marks
+`MCLK_PIN_INPUT` as "master only"; here it is interpreted as **"an external MCLK
+is present"** — the natural dsPIC33AK slave case (external BCLK/FS/MCLK). It does
+not make the wrapper a master.
 
 ## Unsupported (returns `ARM_DRIVER_ERROR_UNSUPPORTED` / specific error)
 
