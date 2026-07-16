@@ -11,7 +11,7 @@ Prerequisite: the official ARM `Driver_SAI.h` (Apache-2.0, API v1.2), vendored a
 
 | CMSIS driver object | dsPIC33AK HAL |
 |---|---|
-| `Driver_SAI0` | the single `dspic33ak_spi_i2s_tdm` transport (SPI1 RX = block-timing reference) |
+| `Driver_SAI0` | the single `dspic33ak_spi_i2s_tdm` transport (SPI1 = the primary leg) |
 
 ## Validated envelope
 

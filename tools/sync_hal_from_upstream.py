@@ -36,6 +36,8 @@ HALS = (
             "dspic33ak_spi_i2s_tdm_diag.h",
             "dspic33ak_spi_i2s_tdm_hw.c",
             "dspic33ak_spi_i2s_tdm_hw.h",
+            "dspic33ak_spi_i2s_tdm_fs_clc.c",
+            "dspic33ak_spi_i2s_tdm_fs_clc.h",
             "dspic33ak_spi_i2s_tdm_reg.h",
             "dspic33ak_spi_i2s_tdm_conf.h_example",
         ),

@@ -519,7 +519,7 @@ static int32_t sai0_configure(sai_ctx_t *ctx, uint32_t control, uint32_t arg1, u
         return ARM_SAI_ERROR_PROTOCOL;
     }
 
-    cfg.role      = DSPIC33AK_SPI_I2S_TDM_ROLE_SLAVE;
+    cfg.clock_role      = DSPIC33AK_SPI_I2S_TDM_CLOCK_SLAVE;
     cfg.word_bits = 32u;
 
     /* AUDIO_FREQ (arg2): validate against the integration sample-rate policy. The
@@ -586,7 +586,11 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
                  * port opened but the instance failed to start, close() to keep the
                  * lifecycle balanced (close() is a near-no-op today, but symmetric for a
                  * future clock-deinit hook). */
-                if (!dspic33ak_spi_i2s_tdm_open(DSPIC33AK_SPI_I2S_TDM_ROLE_SLAVE)) {
+                /* open() derives the role from the committed primary leg (SPI1, configured
+                 * SLAVE by sai0_configure above); no role argument. The board pin hook skips
+                 * an unconfigured SPI2 (single-instance CMSIS run), so opening only SPI1 is
+                 * safe. */
+                if (!dspic33ak_spi_i2s_tdm_open()) {
                     return ARM_DRIVER_ERROR;
                 }
                 if (!dspic33ak_spi_i2s_tdm_inst_start(dspic33ak_spi_i2s_tdm_spi1())) {
