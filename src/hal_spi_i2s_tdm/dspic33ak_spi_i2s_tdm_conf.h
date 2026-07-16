@@ -32,7 +32,7 @@
 // (Sample rate is NOT a setting here -- the transport is rate-agnostic; the product's
 // supported-rate policy lives in the app layer, not the HAL.)
 // The core's static DMA ping-pong buffers are sized 2 * SLOTS_PER_FS *
-// BLOCK_FRAMES, and configure() rejects a config_t whose slots_per_fs /
+// BLOCK_FRAMES, and inst_configure() / configure_system() reject a config_t whose slots_per_fs /
 // block_frames do not match these compile-time values.
 //===========================================================
 
@@ -102,10 +102,12 @@
 //===========================================================
 
 // Per-leg SYNC DOMAIN id: the s_spi_legs[] default (a caller using configure_system() may
-// override it per leg at runtime). Legs sharing a domain are co-clocked and started
-// phase-locked as a group; different domains are independent/async. NOT the clock role
-// (config_t.clock_role). Default: one co-clocked group (domain 0); give an independent leg
-// its own id (1, 2, ...) and add the matching DSPIC33AK_TDM_<name>_SYNC_DOMAIN.
+// override it per leg at runtime). Legs sharing a domain are co-clocked and started phase-locked
+// as a group; legs in different domains are started/rolled-back separately and need not share
+// BCLK/FS. NOTE: this is NOT full independence -- source-readiness is engine-wide/primary-gated and
+// shared resources (CLC10, the board clock port) are not per-domain. NOT the clock role
+// (config_t.clock_role). Default: one co-clocked group (domain 0); give a separate leg its own id
+// (1, 2, ...) and add the matching DSPIC33AK_TDM_<name>_SYNC_DOMAIN.
 #ifndef DSPIC33AK_TDM_SPI1_SYNC_DOMAIN
 #define DSPIC33AK_TDM_SPI1_SYNC_DOMAIN   (0)
 #endif

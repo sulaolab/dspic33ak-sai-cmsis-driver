@@ -119,7 +119,15 @@ typedef struct {
     const int32_t *tx_buf; uint32_t tx_num; volatile uint32_t tx_cnt;
     int32_t       *rx_buf; uint32_t rx_num; volatile uint32_t rx_cnt;
 
-    /* Sticky, surfaced through GetStatus(); cleared at the next Send/Receive. */
+    /* Per-direction enable intent (Control(CONTROL_TX/RX) arg1 bit0). Whole-stream in
+     * hardware, but tracked per direction so the bridge only raises tx_underflow /
+     * rx_overflow for a direction the caller actually enabled. */
+    volatile uint8_t tx_enabled;
+    volatile uint8_t rx_enabled;
+
+    /* Sticky, surfaced through GetStatus(); cleared at the next Send/Receive. The
+     * matching ARM_SAI_EVENT_TX_UNDERFLOW / _RX_OVERFLOW is fired ONCE per episode (on
+     * the 0->1 transition), not every block. */
     volatile uint8_t tx_underflow;
     volatile uint8_t rx_overflow;
 } sai_ctx_t;
@@ -190,8 +198,15 @@ static void sai0_block_bridge(const int32_t *src, int32_t *dst, void *user)
             ctx->rx_buf = NULL;
             events |= ARM_SAI_EVENT_RECEIVE_COMPLETE;
         } else if (take < n) {
-            ctx->rx_overflow = 1u;   /* more HAL data than caller space */
+            /* more HAL data than caller space: overflow (fire the event once) */
+            if (ctx->rx_overflow == 0u) { events |= ARM_SAI_EVENT_RX_OVERFLOW; }
+            ctx->rx_overflow = 1u;
         }
+    } else if (ctx->rx_enabled != 0u) {
+        /* RX enabled but no active Receive buffer: the incoming block is dropped ->
+         * overflow (fire the event once per episode; cleared by the next Receive()). */
+        if (ctx->rx_overflow == 0u) { events |= ARM_SAI_EVENT_RX_OVERFLOW; }
+        ctx->rx_overflow = 1u;
     }
 
     /* TX: fill this block's half from the caller's Send buffer. Underflow if the Send
@@ -205,6 +220,7 @@ static void sai0_block_bridge(const int32_t *src, int32_t *dst, void *user)
         }
         if (take < n) {
             memset(&dst[take], 0, (size_t)(n - take) * sizeof(int32_t));
+            if (ctx->tx_underflow == 0u) { events |= ARM_SAI_EVENT_TX_UNDERFLOW; }
             ctx->tx_underflow = 1u;
         }
         if (ctx->tx_cnt >= ctx->tx_num) {
@@ -212,8 +228,14 @@ static void sai0_block_bridge(const int32_t *src, int32_t *dst, void *user)
             events |= ARM_SAI_EVENT_SEND_COMPLETE;
         }
     } else if (dst != NULL) {
-        /* No active Send: keep the stream silent. */
+        /* No active Send: keep the stream silent. If TX was enabled by the caller, an
+         * enabled stream with no data to send is an underflow (event once per episode;
+         * cleared by the next Send()). */
         memset(dst, 0, (size_t)n * sizeof(int32_t));
+        if (ctx->tx_enabled != 0u) {
+            if (ctx->tx_underflow == 0u) { events |= ARM_SAI_EVENT_TX_UNDERFLOW; }
+            ctx->tx_underflow = 1u;
+        }
     }
 
     /* Fire the user callback ONCE, after every ctx field above is settled. The
@@ -242,12 +264,23 @@ static int32_t SAI0_Initialize(ARM_SAI_SignalEvent_t cb_event)
 {
     sai_ctx_t *ctx = &sai0_ctx;
 
+    /* Idempotent re-Initialize: if already initialized, only refresh the event callback
+     * and keep the transport state (powered/configured/running, transfer pointers) intact.
+     * Wiping the context here while a stream is live would orphan a running HAL (the
+     * subsequent PowerControl(OFF) would see powered=false and skip the teardown). */
+    if (ctx->initialized) {
+        ctx->cb_event = cb_event;
+        return ARM_DRIVER_OK;
+    }
+
     ctx->cb_event      = cb_event;
     ctx->initialized   = true;
     ctx->powered       = false;
     ctx->configured    = false;
     ctx->tx_buf        = NULL; ctx->tx_num = 0u; ctx->tx_cnt = 0u;
     ctx->rx_buf        = NULL; ctx->rx_num = 0u; ctx->rx_cnt = 0u;
+    ctx->tx_enabled    = 0u;
+    ctx->rx_enabled    = 0u;
     ctx->tx_underflow  = 0u;
     ctx->rx_overflow   = 0u;
 
@@ -292,11 +325,27 @@ static int32_t SAI0_PowerControl(ARM_POWER_STATE state)
         if (ctx->powered) {
             return ARM_DRIVER_OK;
         }
-        /* Register the wrapper's block callback on the SPI1 instance (explicit -- no
-         * app fallback). Does NOT start the stream; streaming begins on
-         * Control(CONTROL_TX/RX enable). SPI2, if present, is left without a callback
-         * (silent) -- a second bridge instance is future work. */
-        dspic33ak_spi_i2s_tdm_set_block_callback(dspic33ak_spi_i2s_tdm_spi1(), sai0_block_bridge, ctx);
+        /* The DMA HAL requires a one-time global init before any channel configuration and
+         * does NOT call it from the channel APIs; it is idempotent, so this driver owns it
+         * here rather than relying on the integrator to remember a startup step (forgetting
+         * it would make only start() fail, silently). */
+        dspic33ak_dma_global_init();
+        if (!dspic33ak_dma_global_is_ready()) {
+            return ARM_DRIVER_ERROR;
+        }
+        /* Register the wrapper's block callback on the SPI1 instance (explicit -- no app
+         * fallback), FAIL-CLOSED: a NULL instance or a rejected registration (e.g. the HAL
+         * refuses a callback change while running) must NOT report FULL success, or the
+         * bridge would be missing while we claim powered. Does NOT start the stream;
+         * streaming begins on Control(CONTROL_TX/RX enable). SPI2, if present, is left
+         * without a callback (silent) -- a second bridge instance is future work. */
+        {
+            dspic33ak_spi_i2s_tdm_inst_t *spi1 = dspic33ak_spi_i2s_tdm_spi1();
+            if ((spi1 == NULL) ||
+                !dspic33ak_spi_i2s_tdm_set_block_callback(spi1, sai0_block_bridge, ctx)) {
+                return ARM_DRIVER_ERROR;   /* stay unpowered; surface the failure */
+            }
+        }
         ctx->tx_underflow = 0u;
         ctx->rx_overflow  = 0u;
         ctx->powered      = true;
@@ -585,11 +634,18 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
         return sai0_configure(ctx, control, arg1, arg2);
 
     case ARM_SAI_CONTROL_TX:
-    case ARM_SAI_CONTROL_RX:
+    case ARM_SAI_CONTROL_RX: {
         /* Whole-stream, full-duplex start/stop (no true per-direction control).
-         * arg1 bit0 = enable; bit1 (mute) is ignored (no codec control in HAL). */
+         * arg1 bit0 = enable. Higher bits (bit1 = mute, and any undefined bits) are NOT
+         * supported: reject them rather than silently succeed, matching the wrapper's
+         * fail-closed "reject outside the envelope" policy (there is no codec mute in the
+         * transport HAL). */
+        const bool is_tx = ((control & ARM_SAI_CONTROL_Msk) == ARM_SAI_CONTROL_TX);
         if (!ctx->powered) {
             return ARM_DRIVER_ERROR;
+        }
+        if ((arg1 & ~1u) != 0u) {
+            return ARM_DRIVER_ERROR_UNSUPPORTED;
         }
         if ((arg1 & 1u) != 0u) {
             /* Refuse to start before a successful Control(CONFIGURE_*): otherwise the
@@ -617,6 +673,9 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
                     return ARM_DRIVER_ERROR;
                 }
             }
+            /* Record this direction's enable intent (bridge uses it to decide whether a
+             * missing Send/Receive buffer is a real underflow/overflow). */
+            if (is_tx) { ctx->tx_enabled = 1u; } else { ctx->rx_enabled = 1u; }
         } else {
             /* Fail-closed teardown: stop the primary only when running (inst_stop() rejects a
              * not-yet-configured CONFIG_MODE_NONE/non-SINGLE stream), always close() to recover an
@@ -630,8 +689,13 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
             if (!ok) {
                 return ARM_DRIVER_ERROR;
             }
+            /* Disable stops the whole stream (full-duplex, single transport), so clear BOTH
+             * directions' enable intent regardless of which control word was used. */
+            ctx->tx_enabled = 0u;
+            ctx->rx_enabled = 0u;
         }
         return ARM_DRIVER_OK;
+    }
 
     case ARM_SAI_ABORT_SEND: {
         /* Clear the transfer under the RX-DMA IRQ mask so the bridge cannot read a

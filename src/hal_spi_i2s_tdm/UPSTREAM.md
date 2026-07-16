@@ -14,14 +14,14 @@ Synchronized into this repository under:
 
 ## Current Synchronized Revision
 
-- Upstream commit: 80ae7b013747f5affe6b6911adc8fe08f18d9be8
+- Upstream commit: a13499da0e36db8aa9675105a2ee1df668c2cf00
 
 > Pre-release: this revision is vendored from the upstream's `feat/system-topology-v2`
 > branch (the system-topology HAL: `configure_system()`, `open()` with no role argument,
 > per-domain framing validation, config-ownership mode). The `main`-based
 > `tools/sync_hal_from_upstream.py` sync will be re-run once that upstream work merges to
-> the upstream `main`; this vendor copy is byte-identical (EOL-normalized) to the upstream
-> branch tip.
+> the upstream `main`; this vendor copy is byte-identical (EOL-normalized) to that upstream
+> commit (the branch tip at vendor time).
 
 ## Notes
 
