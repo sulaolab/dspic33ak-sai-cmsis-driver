@@ -18,7 +18,7 @@ Prerequisite: the official ARM `Driver_SAI.h` (Apache-2.0, API v1.2), vendored a
 `GetCapabilities` and the `Control` parser advertise/accept **only** what the HAL
 validates (mirrors `tdm_config_is_supported()`):
 
-- dsPIC33AK SPI **slave**, external BCLK / FS / MCLK
+- dsPIC33AK SPI **slave**, external BCLK / FS; external MCLK input or MCLK inactive
 - 32-bit word and slot
 - `ARM_SAI_PROTOCOL_I2S` (2 slots) **or** `ARM_SAI_PROTOCOL_USER` = TDM8 (8 slots),
   **whichever matches the compiled HAL geometry** (`DSPIC33AK_TDM_SLOTS_PER_FS`:

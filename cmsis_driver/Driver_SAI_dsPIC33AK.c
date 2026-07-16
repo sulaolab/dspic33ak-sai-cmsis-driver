@@ -264,12 +264,14 @@ static int32_t SAI0_Initialize(ARM_SAI_SignalEvent_t cb_event)
 {
     sai_ctx_t *ctx = &sai0_ctx;
 
-    /* Idempotent re-Initialize: if already initialized, only refresh the event callback
-     * and keep the transport state (powered/configured/running, transfer pointers) intact.
-     * Wiping the context here while a stream is live would orphan a running HAL (the
-     * subsequent PowerControl(OFF) would see powered=false and skip the teardown). */
+    /* Idempotent re-Initialize: if already initialized, this is a true no-op -- keep the existing
+     * callback and all transport state (powered/configured/running, transfer pointers) intact.
+     * Rationale: (1) wiping the context while a stream is live would orphan a running HAL (the
+     * subsequent PowerControl(OFF) would see powered=false and skip the teardown); (2) the block
+     * bridge reads ctx->cb_event from the RX-DMA ISR, and a 32-bit pointer store is not atomic on
+     * this 16-bit core, so replacing it here would race the ISR. To change the callback, call
+     * Uninitialize() then Initialize() (the CMSIS-conventional way). */
     if (ctx->initialized) {
-        ctx->cb_event = cb_event;
         return ARM_DRIVER_OK;
     }
 
@@ -348,6 +350,10 @@ static int32_t SAI0_PowerControl(ARM_POWER_STATE state)
         }
         ctx->tx_underflow = 0u;
         ctx->rx_overflow  = 0u;
+        /* Start a fresh power session with no stale per-direction enable intent (defensive;
+         * OFF clears these too). */
+        ctx->tx_enabled   = 0u;
+        ctx->rx_enabled   = 0u;
         ctx->powered      = true;
         return ARM_DRIVER_OK;
 
@@ -373,6 +379,11 @@ static int32_t SAI0_PowerControl(ARM_POWER_STATE state)
             }
         }
         ctx->tx_buf  = NULL; ctx->rx_buf = NULL;
+        /* Clear per-direction enable intent so a later FULL + single-direction enable cannot
+         * inherit a stale flag (which would raise a spurious underflow/overflow for a direction
+         * the new session never enabled). Only on a successful teardown (kept above on failure). */
+        ctx->tx_enabled = 0u;
+        ctx->rx_enabled = 0u;
         ctx->powered = false;
         return ARM_DRIVER_OK;
 
