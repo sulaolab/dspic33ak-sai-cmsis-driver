@@ -298,11 +298,16 @@ static int32_t SAI0_PowerControl(ARM_POWER_STATE state)
 
     case ARM_POWER_OFF:
         if (ctx->powered) {
-            if (dspic33ak_spi_i2s_tdm_is_running()) {
-                dspic33ak_spi_i2s_tdm_inst_stop(dspic33ak_spi_i2s_tdm_spi1());
-                dspic33ak_spi_i2s_tdm_close();
+            /* Fail-closed teardown: stop the primary, close the port, and clear the callback --
+             * ALL must succeed before we drop the powered state. Not gated on is_running() alone
+             * (also recovers an opened-but-stopped port). inst_stop()/close() are bool now; if any
+             * step fails, keep ctx->powered = true and return an error so the OFF is not faked. */
+            bool ok = dspic33ak_spi_i2s_tdm_inst_stop(dspic33ak_spi_i2s_tdm_spi1());
+            if (!dspic33ak_spi_i2s_tdm_close()) { ok = false; }
+            if (!dspic33ak_spi_i2s_tdm_set_block_callback(dspic33ak_spi_i2s_tdm_spi1(), NULL, NULL)) { ok = false; }
+            if (!ok) {
+                return ARM_DRIVER_ERROR;   /* teardown incomplete -> stay powered, surface failure */
             }
-            dspic33ak_spi_i2s_tdm_set_block_callback(dspic33ak_spi_i2s_tdm_spi1(), NULL, NULL);
         }
         ctx->tx_buf  = NULL; ctx->rx_buf = NULL;
         ctx->powered = false;
@@ -599,9 +604,13 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
                 }
             }
         } else {
-            if (dspic33ak_spi_i2s_tdm_is_running()) {
-                dspic33ak_spi_i2s_tdm_inst_stop(dspic33ak_spi_i2s_tdm_spi1());
-                dspic33ak_spi_i2s_tdm_close();
+            /* Fail-closed teardown: stop the primary + close the port and PROPAGATE a failure to
+             * the CMSIS caller. Not gated on is_running() alone -- also recovers an opened-but-
+             * stopped state. inst_stop()/close() are bool now. */
+            bool ok = dspic33ak_spi_i2s_tdm_inst_stop(dspic33ak_spi_i2s_tdm_spi1());
+            if (!dspic33ak_spi_i2s_tdm_close()) { ok = false; }
+            if (!ok) {
+                return ARM_DRIVER_ERROR;
             }
         }
         return ARM_DRIVER_OK;
