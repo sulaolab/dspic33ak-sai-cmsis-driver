@@ -69,8 +69,11 @@ extern ARM_DRIVER_SAI Driver_SAI0;
  *   - fs_coincides_first_bclk (SPIFE): match the I2S 1-bit-delay vs TDM framing convention.
  *   - bclk_idle_high / bclk_change_on_active_to_idle (CKP/CKE): match ARM_SAI_CLOCK_POLARITY_0
  *     (the only polarity the wrapper accepts) for this board/codec.
- *   - mclk_enable: consistent with the requested ARM_SAI_MCLK_PIN_* (external MCLK present vs
- *     inactive).
+ * SEPARATELY, mclk_enable is an integration CLOCK-TREE setting, NOT a wire-format field derived
+ * from the CMSIS control: it drives SPIxCON1.MCLKEN, selecting the SPI peripheral-clock reference
+ * (CLKGEN9 vs the standard peripheral clock). The wrapper's ARM_SAI_MCLK_PIN_INPUT/INACTIVE check
+ * is only a declared-attribute gate; it does NOT route a physical MCLK pin or set cfg.mclk_enable.
+ * Set mclk_enable per the board clock tree.
  * A Control(CONFIGURE_*) that returns ARM_DRIVER_OK means the CMSIS-expressed fields were
  * accepted; the wrapper trusts this hook for the electrical fields above and does NOT verify
  * them, so an inconsistent hook produces a running-but-mismatched wire format. (The wrapper

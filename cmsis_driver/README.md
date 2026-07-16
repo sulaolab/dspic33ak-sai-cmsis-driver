@@ -92,6 +92,21 @@ bool Driver_SAI_dsPIC33AK_GetDefaultConfig(dspic33ak_spi_i2s_tdm_config_t *cfg);
 bool Driver_SAI_dsPIC33AK_IsSampleRateSupported(uint32_t hz);
 ```
 
+**Wire-format contract (integrator's responsibility).** The wrapper sets only
+protocol / slot count / slave role / word size from the CMSIS control word; it does **not**
+re-derive or verify the electrical framing fields. So the config `GetDefaultConfig()` returns
+MUST already be consistent with the protocol you will request:
+
+- `fs_shape` — `FS_50PCT` for I2S, `FS_PULSE` for TDM.
+- `fs_coincides_first_bclk` (SPIFE) — the I2S 1-bit-delay vs TDM framing convention.
+- `bclk_idle_high` / `bclk_change_on_active_to_idle` (CKP/CKE) — match `ARM_SAI_CLOCK_POLARITY_0`
+  for your board/codec.
+- `mclk_enable` (MCLKEN clock-tree reference) — set per your board; it is NOT derived from
+  `ARM_SAI_MCLK_PIN_*`.
+
+A `Control(CONFIGURE_*)` returning `ARM_DRIVER_OK` means the CMSIS-expressed fields were accepted;
+an inconsistent hook produces a running-but-mismatched wire format.
+
 ## Configuration
 
 `RTE_Device_SAI_dsPIC33AK_example.h` enables `Driver_SAI0` (`RTE_SAI0 1`) and declares the
@@ -115,8 +130,12 @@ wrapper does not register it for you (it is board-specific). See the HAL README.
 This wrapper is slave-only: it accepts `ARM_SAI_MCLK_PIN_INPUT` or
 `ARM_SAI_MCLK_PIN_INACTIVE` and rejects MCLK output (master-mode). CMSIS marks
 `MCLK_PIN_INPUT` as "master only"; here it is interpreted as **"an external MCLK
-is present"** — the natural dsPIC33AK slave case (external BCLK/FS/MCLK). It does
-not make the wrapper a master.
+is present"** — the natural dsPIC33AK slave case. It does not make the wrapper a master.
+
+`ARM_SAI_MCLK_PIN_INPUT/INACTIVE` is only a **declared attribute** the wrapper accepts; it does
+**not** route a physical MCLK pin nor set `cfg.mclk_enable`. `cfg.mclk_enable` is a separate
+integration clock-tree setting (`SPIxCON1.MCLKEN`: CLKGEN9 vs the standard peripheral clock) that
+comes from the `GetDefaultConfig` hook, not from the CMSIS control word.
 
 ## Unsupported (returns `ARM_DRIVER_ERROR_UNSUPPORTED` / specific error)
 
