@@ -266,7 +266,13 @@ static int32_t SAI0_Uninitialize(void)
     sai_ctx_t *ctx = &sai0_ctx;
 
     if (ctx->powered) {
-        (void)SAI0_PowerControl(ARM_POWER_OFF);
+        /* Propagate a failed power-down instead of faking a clean uninit: if OFF could not fully
+         * tear down (inst_stop/close/callback-clear failed), leave initialized + cb_event intact so
+         * the caller can retry Uninitialize, and surface the error. Consistent with the fail-closed
+         * PowerControl(OFF) teardown above. */
+        if (SAI0_PowerControl(ARM_POWER_OFF) != ARM_DRIVER_OK) {
+            return ARM_DRIVER_ERROR;
+        }
     }
     ctx->cb_event    = NULL;
     ctx->initialized = false;
@@ -298,11 +304,19 @@ static int32_t SAI0_PowerControl(ARM_POWER_STATE state)
 
     case ARM_POWER_OFF:
         if (ctx->powered) {
-            /* Fail-closed teardown: stop the primary, close the port, and clear the callback --
-             * ALL must succeed before we drop the powered state. Not gated on is_running() alone
-             * (also recovers an opened-but-stopped port). inst_stop()/close() are bool now; if any
-             * step fails, keep ctx->powered = true and return an error so the OFF is not faked. */
-            bool ok = dspic33ak_spi_i2s_tdm_inst_stop(dspic33ak_spi_i2s_tdm_spi1());
+            /* Fail-closed teardown: close the port and clear the callback UNCONDITIONALLY, but stop
+             * the primary only when it is actually running. inst_stop() rejects a not-yet-configured
+             * stream (CONFIG_MODE_NONE -> ERR_CONFIG_MODE), so calling it unconditionally would fail
+             * a legitimate Initialize -> PowerControl(FULL) -> PowerControl(OFF) (FULL does not
+             * configure). is_running() true implies SINGLE+configured on the wrapper route, so the
+             * stop then succeeds; when not running there is nothing to stop and close() (mode-
+             * agnostic, true when not running) still recovers an opened-but-stopped port. ALL steps
+             * must succeed before we drop the powered state; if any fails, keep ctx->powered = true
+             * and return an error so the OFF is not faked. */
+            bool ok = true;
+            if (dspic33ak_spi_i2s_tdm_is_running()) {
+                if (!dspic33ak_spi_i2s_tdm_inst_stop(dspic33ak_spi_i2s_tdm_spi1())) { ok = false; }
+            }
             if (!dspic33ak_spi_i2s_tdm_close()) { ok = false; }
             if (!dspic33ak_spi_i2s_tdm_set_block_callback(dspic33ak_spi_i2s_tdm_spi1(), NULL, NULL)) { ok = false; }
             if (!ok) {
@@ -604,10 +618,14 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
                 }
             }
         } else {
-            /* Fail-closed teardown: stop the primary + close the port and PROPAGATE a failure to
-             * the CMSIS caller. Not gated on is_running() alone -- also recovers an opened-but-
-             * stopped state. inst_stop()/close() are bool now. */
-            bool ok = dspic33ak_spi_i2s_tdm_inst_stop(dspic33ak_spi_i2s_tdm_spi1());
+            /* Fail-closed teardown: stop the primary only when running (inst_stop() rejects a
+             * not-yet-configured CONFIG_MODE_NONE/non-SINGLE stream), always close() to recover an
+             * opened-but-stopped state, and PROPAGATE a failure to the CMSIS caller. The block
+             * callback stays registered (a re-enable can restart without re-registering). */
+            bool ok = true;
+            if (dspic33ak_spi_i2s_tdm_is_running()) {
+                if (!dspic33ak_spi_i2s_tdm_inst_stop(dspic33ak_spi_i2s_tdm_spi1())) { ok = false; }
+            }
             if (!dspic33ak_spi_i2s_tdm_close()) { ok = false; }
             if (!ok) {
                 return ARM_DRIVER_ERROR;
