@@ -1,9 +1,10 @@
 # dspic33ak-sai-cmsis-driver
 
-> Want to run it on hardware first?
+> Want to validate the underlying SPI/I2S/TDM HAL on hardware first?
 > Start with [dspic33ak-hal-starter](https://github.com/sulaolab/dspic33ak-hal-starter),
-> which vendors validated snapshots of the dsPIC33AK HAL repositories and
-> provides a ready-to-build MPLAB X project for the dsPIC33AK Curiosity board.
+> which provides a ready-to-build MPLAB X project for the dsPIC33AK Curiosity board.
+> The starter exercises the HAL directly; it does not include or validate this
+> CMSIS-Driver SAI wrapper.
 
 CMSIS-Driver **SAI** wrapper for the dsPIC33AK **SPI/I2S/TDM** HAL.
 

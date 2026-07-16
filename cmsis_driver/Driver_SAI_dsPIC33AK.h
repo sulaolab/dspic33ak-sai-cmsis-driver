@@ -55,11 +55,29 @@ extern ARM_DRIVER_SAI Driver_SAI0;
 
 /*
  * Seed the HAL config used by Control(CONFIGURE_TX/RX). The wrapper overrides only
- * the protocol/slot count from the CMSIS control word; every other field (board
- * electricals: BRG, FRMSYPW/SPIFE/CKP/CKE, MCLKEN, block geometry, ...) comes from
- * here. Return false if no config is available (the weak default returns false, so
- * an integrator that has not provided one gets a clean Control() failure rather than
- * a stream on garbage geometry).
+ * the protocol/slot count (+ clock role = slave, word_bits = 32) from the CMSIS control
+ * word; every other field (board electricals: BRG, fs_shape/SPIFE/CKP/CKE, MCLKEN, block
+ * geometry, ...) comes from here. Return false if no config is available (the weak default
+ * returns false, so an integrator that has not provided one gets a clean Control() failure
+ * rather than a stream on garbage geometry).
+ *
+ * WIRE-FORMAT CONTRACT (integrator's responsibility): the electrical framing fields returned
+ * here are NOT re-derived by the wrapper from the CMSIS control word, so they MUST already be
+ * consistent with the protocol the caller will request via Control(CONFIGURE_*):
+ *   - fs_shape: FS_50PCT for an I2S request (50%-duty LRCLK); FS_PULSE for a TDM (short sync,
+ *     FRAME_SYNC_EARLY=0 / default width).
+ *   - fs_coincides_first_bclk (SPIFE): match the I2S 1-bit-delay vs TDM framing convention.
+ *   - bclk_idle_high / bclk_change_on_active_to_idle (CKP/CKE): match ARM_SAI_CLOCK_POLARITY_0
+ *     (the only polarity the wrapper accepts) for this board/codec.
+ * SEPARATELY, mclk_enable is an integration CLOCK-TREE setting, NOT a wire-format field derived
+ * from the CMSIS control: it drives SPIxCON1.MCLKEN, selecting the SPI peripheral-clock reference
+ * (CLKGEN9 vs the standard peripheral clock). The wrapper's ARM_SAI_MCLK_PIN_INPUT/INACTIVE check
+ * is only a declared-attribute gate; it does NOT route a physical MCLK pin or set cfg.mclk_enable.
+ * Set mclk_enable per the board clock tree.
+ * A Control(CONFIGURE_*) that returns ARM_DRIVER_OK means the CMSIS-expressed fields were
+ * accepted; the wrapper trusts this hook for the electrical fields above and does NOT verify
+ * them, so an inconsistent hook produces a running-but-mismatched wire format. (The wrapper
+ * validates only what CMSIS unambiguously determines: protocol/slots/role/word size/rate.)
  */
 bool Driver_SAI_dsPIC33AK_GetDefaultConfig(dspic33ak_spi_i2s_tdm_config_t *cfg);
 

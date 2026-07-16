@@ -5,7 +5,7 @@ The files in this directory are a vendor copy of the dsPIC33AK SPI/I2S/TDM HAL.
 Upstream repository:
 
 - Repository: https://github.com/sulaolab/dspic33ak-spi-i2s-tdm-hal
-- Branch: main
+- Branch: feat/system-topology-v2 (pre-release)
 - Source directory: src/
 
 Synchronized into this repository under:
@@ -14,7 +14,14 @@ Synchronized into this repository under:
 
 ## Current Synchronized Revision
 
-- Upstream commit: bdccdb7018b30503decb632e14603cfbbda84cfb
+- Upstream commit: a13499da0e36db8aa9675105a2ee1df668c2cf00
+
+> Pre-release: this revision is vendored from the upstream's `feat/system-topology-v2`
+> branch (the system-topology HAL: `configure_system()`, `open()` with no role argument,
+> per-domain framing validation, config-ownership mode). The `main`-based
+> `tools/sync_hal_from_upstream.py` sync will be re-run once that upstream work merges to
+> the upstream `main`; this vendor copy is byte-identical (EOL-normalized) to that upstream
+> commit (the branch tip at vendor time).
 
 ## Notes
 

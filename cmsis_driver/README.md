@@ -11,14 +11,14 @@ Prerequisite: the official ARM `Driver_SAI.h` (Apache-2.0, API v1.2), vendored a
 
 | CMSIS driver object | dsPIC33AK HAL |
 |---|---|
-| `Driver_SAI0` | the single `dspic33ak_spi_i2s_tdm` transport (SPI1 RX = block-timing reference) |
+| `Driver_SAI0` | the single `dspic33ak_spi_i2s_tdm` transport (SPI1 = the primary leg) |
 
 ## Validated envelope
 
 `GetCapabilities` and the `Control` parser advertise/accept **only** what the HAL
 validates (mirrors `tdm_config_is_supported()`):
 
-- dsPIC33AK SPI **slave**, external BCLK / FS / MCLK
+- dsPIC33AK SPI **slave**, external BCLK / FS; external MCLK input or MCLK inactive
 - 32-bit word and slot
 - `ARM_SAI_PROTOCOL_I2S` (2 slots) **or** `ARM_SAI_PROTOCOL_USER` = TDM8 (8 slots),
   **whichever matches the compiled HAL geometry** (`DSPIC33AK_TDM_SLOTS_PER_FS`:
@@ -36,17 +36,24 @@ below); it is **not** passed to the rate-agnostic HAL core.
 - `GetVersion`, `GetCapabilities`
 - `Initialize`, `Uninitialize`
 - `PowerControl(ARM_POWER_FULL/OFF)` — logical power + explicit block-callback
-  registration on the SPI1 instance; does not start the stream
+  registration on the SPI1 instance; does not start the stream. FULL also performs the
+  DMA HAL's one-time `dspic33ak_dma_global_init()` (idempotent), so the integrator does
+  NOT need a separate DMA-init startup step.
 - `Control`:
   - `ARM_SAI_CONFIGURE_TX/RX` — applies protocol/slot count via the HAL
-    `configure()` **while stopped**, seeded from the integrator's default config
+    `inst_configure()` **while stopped**, seeded from the integrator's default config
     (see hooks). Settings outside the validated envelope are rejected with the
     matching `ARM_SAI_ERROR_*` rather than silently ignored. **`CONFIGURE_TX` and
     `CONFIGURE_RX` configure the same full-duplex transport** (no independent
     per-direction config): call either, or call both with identical parameters; a
     differing second configure just re-applies (last wins).
   - `ARM_SAI_CONTROL_TX/RX` (arg1 bit0 = enable) — whole-stream, full-duplex
-    `open`/`start` and `stop`/`close`.
+    `open`/`start` and `stop`/`close`. Higher `arg1` bits (bit1 = mute, and any
+    undefined bits) are rejected with `ARM_DRIVER_ERROR_UNSUPPORTED` — the transport
+    HAL has no codec mute. While a direction is enabled, a block with no armed
+    `Send`/`Receive` buffer raises the sticky `tx_underflow`/`rx_overflow` and fires
+    `ARM_SAI_EVENT_TX_UNDERFLOW`/`_RX_OVERFLOW` once (cleared by the next
+    `Send`/`Receive`).
   - `ARM_SAI_ABORT_SEND/RECEIVE` — cancels the wrapper's copy-layer transfer.
 - `Send` / `Receive` copy layer; `GetTxCount` / `GetRxCount`; `GetStatus`
   (`tx_busy`/`rx_busy` from the active transfer; `tx_underflow`/`rx_overflow`
@@ -85,12 +92,29 @@ bool Driver_SAI_dsPIC33AK_GetDefaultConfig(dspic33ak_spi_i2s_tdm_config_t *cfg);
 bool Driver_SAI_dsPIC33AK_IsSampleRateSupported(uint32_t hz);
 ```
 
+**Wire-format contract (integrator's responsibility).** The wrapper sets only
+protocol / slot count / slave role / word size from the CMSIS control word; it does **not**
+re-derive or verify the electrical framing fields. So the config `GetDefaultConfig()` returns
+MUST already be consistent with the protocol you will request:
+
+- `fs_shape` — `FS_50PCT` for I2S, `FS_PULSE` for TDM.
+- `fs_coincides_first_bclk` (SPIFE) — the I2S 1-bit-delay vs TDM framing convention.
+- `bclk_idle_high` / `bclk_change_on_active_to_idle` (CKP/CKE) — match `ARM_SAI_CLOCK_POLARITY_0`
+  for your board/codec.
+- `mclk_enable` (MCLKEN clock-tree reference) — set per your board; it is NOT derived from
+  `ARM_SAI_MCLK_PIN_*`.
+
+A `Control(CONFIGURE_*)` returning `ARM_DRIVER_OK` means the CMSIS-expressed fields were accepted;
+an inconsistent hook produces a running-but-mismatched wire format.
+
 ## Configuration
 
-`RTE_Device_SAI_dsPIC33AK_example.h` enables `Driver_SAI0` (`RTE_SAI0 1`) and
-declares the default high-level attributes (`RTE_SAI0_DEFAULT_PROTOCOL_I2S`,
-`RTE_SAI0_DEFAULT_SAMPLE_RATE_HZ`). Board-electrical fields and block geometry
-come from the integrator's default config (the `GetDefaultConfig` hook), not from
+`RTE_Device_SAI_dsPIC33AK_example.h` enables `Driver_SAI0` (`RTE_SAI0 1`) and declares the
+default sample rate (`RTE_SAI0_DEFAULT_SAMPLE_RATE_HZ`, used by the weak
+`IsSampleRateSupported()` hook). The protocol (I2S vs TDM8) is NOT selected in RTE — it is
+fixed by the compiled HAL geometry (`DSPIC33AK_TDM_SLOTS_PER_FS`: 2 => I2S, 8 => TDM8), and
+the wrapper advertises/accepts exactly that one protocol. Board-electrical fields and block
+geometry come from the integrator's default config (the `GetDefaultConfig` hook), not from
 RTE. Copy the needed definitions into your application's `RTE_Device.h`.
 
 ## Board port
@@ -106,8 +130,12 @@ wrapper does not register it for you (it is board-specific). See the HAL README.
 This wrapper is slave-only: it accepts `ARM_SAI_MCLK_PIN_INPUT` or
 `ARM_SAI_MCLK_PIN_INACTIVE` and rejects MCLK output (master-mode). CMSIS marks
 `MCLK_PIN_INPUT` as "master only"; here it is interpreted as **"an external MCLK
-is present"** — the natural dsPIC33AK slave case (external BCLK/FS/MCLK). It does
-not make the wrapper a master.
+is present"** — the natural dsPIC33AK slave case. It does not make the wrapper a master.
+
+`ARM_SAI_MCLK_PIN_INPUT/INACTIVE` is only a **declared attribute** the wrapper accepts; it does
+**not** route a physical MCLK pin nor set `cfg.mclk_enable`. `cfg.mclk_enable` is a separate
+integration clock-tree setting (`SPIxCON1.MCLKEN`: CLKGEN9 vs the standard peripheral clock) that
+comes from the `GetDefaultConfig` hook, not from the CMSIS control word.
 
 ## Unsupported (returns `ARM_DRIVER_ERROR_UNSUPPORTED` / specific error)
 
