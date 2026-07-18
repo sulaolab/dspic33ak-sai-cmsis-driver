@@ -5,7 +5,7 @@ The files in this directory are a vendor copy of the dsPIC33AK SPI/I2S/TDM HAL.
 Upstream repository:
 
 - Repository: https://github.com/sulaolab/dspic33ak-spi-i2s-tdm-hal
-- Branch: feat/tdm-connector-glitch-frmerr-detect (pre-release)
+- Branch: main
 - Source directory: src/
 
 Synchronized into this repository under:
@@ -16,15 +16,10 @@ Synchronized into this repository under:
 
 - Upstream commit: 5f8690ce3c5284ba8125ddd327afb77afa423ee4
 
-> Pre-release: this revision is vendored from the upstream's
-> `feat/tdm-connector-glitch-frmerr-detect` branch — the system-topology HAL
-> (`configure_system()`, `open()` with no role argument, per-domain framing validation,
-> config-ownership mode) plus the SPIxSTAT (SPIROV/SPITUR/FRMERR) framed-transport health
-> diagnostics added on top of it. The `main`-based `tools/sync_hal_from_upstream.py` sync
-> will be re-run once that upstream work merges to the upstream `main`; this vendor copy is
-> byte-identical (EOL-normalized) to that upstream commit (the branch tip at vendor time).
-> If the upstream branch merges to `main` before this CMSIS branch does, re-point this file
-> at the resulting `main` commit before merging here.
+> This revision carries the system-topology HAL (`configure_system()`, `open()` with no
+> role argument, per-domain framing validation, config-ownership mode) plus the SPIxSTAT
+> (SPIROV/SPITUR/FRMERR) framed-transport health diagnostics added on top of it. This
+> vendor copy is byte-identical (EOL-normalized) to that upstream `main` commit.
 
 ## Notes
 
