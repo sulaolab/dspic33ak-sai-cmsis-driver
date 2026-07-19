@@ -39,9 +39,6 @@
 
 #include "Driver_SAI_dsPIC33AK.h"
 
-#if DSPIC33AK_TDM_BASE_ON_SPI34
-#error "CMSIS-SAI Driver_SAI0 is bound to physical SPI1/DMA0; SPI3/4 test-bank mode is unsupported."
-#endif
 #include "dspic33ak_spi_i2s_tdm.h"
 #include "dspic33ak_dma.h"   // RX-DMA IRQ guard around copy-layer state updates
 
@@ -53,6 +50,10 @@
 #define DRIVER_SAI_DSPIC33AK_RTE_HEADER "RTE_Device_SAI_dsPIC33AK_example.h"
 #endif
 #include DRIVER_SAI_DSPIC33AK_RTE_HEADER
+
+#if (RTE_SAI0 != 0) && DSPIC33AK_TDM_BASE_ON_SPI34
+#error "CMSIS-SAI Driver_SAI0 is bound to physical SPI1; SPI3/4 test-bank mode is unsupported."
+#endif
 
 /* This wrapper's implementation version. The CMSIS SAI API version it conforms to
  * is ARM_SAI_API_VERSION (1.2). */
