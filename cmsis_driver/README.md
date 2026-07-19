@@ -11,7 +11,10 @@ Prerequisite: the official ARM `Driver_SAI.h` (Apache-2.0, API v1.2), vendored a
 
 | CMSIS driver object | dsPIC33AK HAL |
 |---|---|
-| `Driver_SAI0` | the single `dspic33ak_spi_i2s_tdm` transport (SPI1 = the primary leg) |
+| `Driver_SAI0` | the single `dspic33ak_spi_i2s_tdm` transport (literal physical SPI1 / DMA0) |
+
+`Driver_SAI0` is intentionally not remapped to the transport HAL's SPI3/4 test bank. A build
+with `DSPIC33AK_TDM_BASE_ON_SPI34=1` is rejected at compile time.
 
 ## Validated envelope
 

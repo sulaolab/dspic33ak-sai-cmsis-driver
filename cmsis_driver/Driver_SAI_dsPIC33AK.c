@@ -38,6 +38,10 @@
 #include <string.h>
 
 #include "Driver_SAI_dsPIC33AK.h"
+
+#if DSPIC33AK_TDM_BASE_ON_SPI34
+#error "CMSIS-SAI Driver_SAI0 is bound to physical SPI1/DMA0; SPI3/4 test-bank mode is unsupported."
+#endif
 #include "dspic33ak_spi_i2s_tdm.h"
 #include "dspic33ak_dma.h"   // RX-DMA IRQ guard around copy-layer state updates
 
