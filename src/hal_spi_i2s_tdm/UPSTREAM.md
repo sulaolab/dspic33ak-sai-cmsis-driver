@@ -14,12 +14,11 @@ Synchronized into this repository under:
 
 ## Current Synchronized Revision
 
-- Upstream commit: 5f8690ce3c5284ba8125ddd327afb77afa423ee4
+- Upstream commit: 8a77c6a52223670a83dd090d3f484a5e2fb59432
 
-> This revision carries the system-topology HAL (`configure_system()`, `open()` with no
-> role argument, per-domain framing validation, config-ownership mode) plus the SPIxSTAT
-> (SPIROV/SPITUR/FRMERR) framed-transport health diagnostics added on top of it. This
-> vendor copy is byte-identical (EOL-normalized) to that upstream `main` commit.
+> This revision also carries explicit SPI3/4 physical mapping, hard-forced IGNROV/IGNTUR
+> containment, and raw RX-DMA OVERRUN diagnostics. This vendor copy is byte-identical
+> (EOL-normalized) to that upstream `main` commit.
 
 ## Notes
 

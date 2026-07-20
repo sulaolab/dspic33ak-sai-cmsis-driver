@@ -15,7 +15,7 @@ Synchronized into this repository under:
 
 ## Current Synchronized Revision
 
-- Upstream commit: 2570ed86873809ffd29b670b9dbcc1fc5e71dba1
+- Upstream commit: 30e9bf943af51853fda90293b6fb9adeefb26290
 
 ## Update Policy
 

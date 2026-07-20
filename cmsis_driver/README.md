@@ -11,7 +11,11 @@ Prerequisite: the official ARM `Driver_SAI.h` (Apache-2.0, API v1.2), vendored a
 
 | CMSIS driver object | dsPIC33AK HAL |
 |---|---|
-| `Driver_SAI0` | the single `dspic33ak_spi_i2s_tdm` transport (SPI1 = the primary leg) |
+| `Driver_SAI0` | the single `dspic33ak_spi_i2s_tdm` transport on literal physical SPI1 |
+
+The RX DMA channel follows `DSPIC33AK_TDM_SPI1_RX_DMA` (DMA0 by default). `Driver_SAI0` is
+intentionally not remapped to the transport HAL's SPI3/4 test bank; an enabled `RTE_SAI0`
+build with `DSPIC33AK_TDM_BASE_ON_SPI34=1` is rejected at compile time.
 
 ## Validated envelope
 
@@ -38,7 +42,9 @@ below); it is **not** passed to the rate-agnostic HAL core.
 - `PowerControl(ARM_POWER_FULL/OFF)` — logical power + explicit block-callback
   registration on the SPI1 instance; does not start the stream. FULL also performs the
   DMA HAL's one-time `dspic33ak_dma_global_init()` (idempotent), so the integrator does
-  NOT need a separate DMA-init startup step.
+  NOT need a separate DMA-init startup step. This applies the DMA HAL's device-wide SRAM
+  arbitration policy (`BMXINITPR.DMAPR=1`); regression-test other DMA users and CPU/DSP
+  timing paths in the integrated system.
 - `Control`:
   - `ARM_SAI_CONFIGURE_TX/RX` — applies protocol/slot count via the HAL
     `inst_configure()` **while stopped**, seeded from the integrator's default config
@@ -64,7 +70,7 @@ below); it is **not** passed to the rate-agnostic HAL core.
 `err_rov_block_count` / `err_tur_block_count` / `err_frm_block_count` /
 `frmerr_consecutive_blocks`, sampled once per RX block from the sticky `SPIROV`/`FRMERR` flags
 and the live `SPITUR` status (see the HAL's README,
-["SPI framed-transport health diagnostics"](https://github.com/sulaolab/dspic33ak-spi-i2s-tdm-hal#6-spi-framed-transport-health-diagnostics))
+["DMA and SPI transport-health diagnostics"](https://github.com/sulaolab/dspic33ak-spi-i2s-tdm-hal#6-dma-and-spi-transport-health-diagnostics))
 and read via `dspic33ak_spi_i2s_tdm_get_status()`. These are distinct from
 this wrapper's `tx_underflow`/`rx_overflow`, which are the wrapper's own software
 buffer-semantics events (raised when a block runs with no armed `Send`/`Receive` buffer). The

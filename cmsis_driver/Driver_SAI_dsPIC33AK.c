@@ -38,6 +38,7 @@
 #include <string.h>
 
 #include "Driver_SAI_dsPIC33AK.h"
+
 #include "dspic33ak_spi_i2s_tdm.h"
 #include "dspic33ak_dma.h"   // RX-DMA IRQ guard around copy-layer state updates
 
@@ -49,6 +50,10 @@
 #define DRIVER_SAI_DSPIC33AK_RTE_HEADER "RTE_Device_SAI_dsPIC33AK_example.h"
 #endif
 #include DRIVER_SAI_DSPIC33AK_RTE_HEADER
+
+#if (RTE_SAI0 != 0) && DSPIC33AK_TDM_BASE_ON_SPI34
+#error "CMSIS-SAI Driver_SAI0 is bound to physical SPI1; SPI3/4 test-bank mode is unsupported."
+#endif
 
 /* This wrapper's implementation version. The CMSIS SAI API version it conforms to
  * is ARM_SAI_API_VERSION (1.2). */
@@ -80,7 +85,7 @@ static const ARM_DRIVER_VERSION sai_driver_version = {
 };
 
 /* Validated envelope only: a single standalone full-duplex stream, external MCLK
- * input, no justified/PCM/AC97, no mono/companding, no FRAME_ERROR event (FRMERR
+ * input or inactive MCLK, no justified/PCM/AC97, no mono/companding, no FRAME_ERROR event (FRMERR
  * unverified in the slave-framed config). The protocol advertised (I2S vs TDM8)
  * tracks the compiled HAL geometry -- only one is realisable per build. */
 static const ARM_SAI_CAPABILITIES sai_capabilities = {
@@ -93,7 +98,7 @@ static const ARM_SAI_CAPABILITIES sai_capabilities = {
     0u,                     /* protocol_ac97                                 */
     0u,                     /* mono_mode                                     */
     0u,                     /* companding                                    */
-    1u,                     /* mclk_pin           (external MCLK input)      */
+    1u,                     /* mclk_pin           (external input/inactive)  */
     0u,                     /* event_frame_error                             */
     0u                      /* reserved                                      */
 };
@@ -167,15 +172,13 @@ static uint32_t sai0_block_samples(const dspic33ak_spi_i2s_tdm_config_t *cfg)
     return (uint32_t)cfg->block_frames * (uint32_t)cfg->slots_per_fs;
 }
 
-/* HAL block callback (DMA0 ISR context) = the CMSIS copy layer. Copies the RX half
+/* HAL block callback (configured SPI1 RX-DMA ISR context) = the CMSIS copy layer. Copies the RX half
  * into an active Receive buffer and fills the TX half from an active Send buffer,
  * firing SEND/RECEIVE_COMPLETE when a transfer finishes. Kept short (ISR).
  *
- * Single-instance mapping: this bridge serves ONE SPI instance (SPI1). The block
- * callback is now per-instance (src, dst, user) -- the old dst_b "second output"
- * replication is gone. Driving a second output codec (SPI2) under CMSIS is future
- * work: register a second bridge on the SPI2 instance. Until then SPI2 stays silent
- * (no callback registered). */
+ * Single-instance mapping: this bridge serves literal physical SPI1. The block
+ * callback is per-instance (src, dst, user); all non-SPI1 legs remain outside
+ * Driver_SAI0 and receive no CMSIS bridge callback. */
 static void sai0_block_bridge(const int32_t *src, int32_t *dst, void *user)
 {
     sai_ctx_t *ctx    = (sai_ctx_t *)user;
@@ -339,8 +342,8 @@ static int32_t SAI0_PowerControl(ARM_POWER_STATE state)
          * fallback), FAIL-CLOSED: a NULL instance or a rejected registration (e.g. the HAL
          * refuses a callback change while running) must NOT report FULL success, or the
          * bridge would be missing while we claim powered. Does NOT start the stream;
-         * streaming begins on Control(CONTROL_TX/RX enable). SPI2, if present, is left
-         * without a callback (silent) -- a second bridge instance is future work. */
+         * streaming begins on Control(CONTROL_TX/RX enable). All non-SPI1 legs remain
+         * outside Driver_SAI0 and receive no CMSIS bridge callback. */
         {
             dspic33ak_spi_i2s_tdm_inst_t *spi1 = dspic33ak_spi_i2s_tdm_spi1();
             if ((spi1 == NULL) ||
@@ -603,7 +606,8 @@ static int32_t sai0_configure(sai_ctx_t *ctx, uint32_t control, uint32_t arg1, u
 
     /* AUDIO_FREQ (arg2): validate against the integration sample-rate policy. The
      * transport HAL is rate-agnostic (runs at the configured BRG / external clock), so
-     * the wrapper checks the requested rate here against conf.h's policy macro rather
+     * the wrapper checks the requested rate here against
+     * Driver_SAI_dsPIC33AK_IsSampleRateSupported() rather
      * than handing it to the core. MCLK prescaler is master-mode only -> reject any
      * non-default value. */
     if ((arg2 & ARM_SAI_MCLK_PRESCALER_Msk) != 0u) {
@@ -617,7 +621,8 @@ static int32_t sai0_configure(sai_ctx_t *ctx, uint32_t control, uint32_t arg1, u
     }
 
     /* Apply to the SPI1 instance while stopped (HAL guards running + validates the
-     * envelope). This CMSIS SAI0 maps to SPI1 only; SPI2 is future work. */
+     * envelope). Driver_SAI0 maps only to literal physical SPI1; all other legs remain
+     * outside the wrapper. */
     if (!dspic33ak_spi_i2s_tdm_inst_configure(dspic33ak_spi_i2s_tdm_spi1(), &cfg)) {
         return ARM_DRIVER_ERROR;
     }
@@ -674,8 +679,7 @@ static int32_t SAI0_Control(uint32_t control, uint32_t arg1, uint32_t arg2)
                  * future clock-deinit hook). */
                 /* open() derives the role from the committed primary leg (SPI1, configured
                  * SLAVE by sai0_configure above); no role argument. The board pin hook skips
-                 * an unconfigured SPI2 (single-instance CMSIS run), so opening only SPI1 is
-                 * safe. */
+                 * unconfigured non-SPI1 legs in this single-instance CMSIS run. */
                 if (!dspic33ak_spi_i2s_tdm_open()) {
                     return ARM_DRIVER_ERROR;
                 }

@@ -90,7 +90,8 @@ layer, and usage.
 
 Verified live (full-duplex I2S/TDM loopback) on **dsPIC33AK512MPS512** in the
 Perseus integration project. The wrapper advertises and accepts **only** the
-HAL's validated envelope: dsPIC33AK SPI **slave**, external BCLK/FS/MCLK, 32-bit
+HAL's validated envelope: dsPIC33AK SPI **slave**, external BCLK/FS, external-input
+or inactive MCLK, 32-bit
 word/slot, and **either** I2S (2 slots) **or** TDM8 (8 slots) — whichever matches
 the compiled HAL geometry (`DSPIC33AK_TDM_SLOTS_PER_FS`); a single build realises
 one protocol, and `GetCapabilities`/`Control` advertise/accept exactly that one.
