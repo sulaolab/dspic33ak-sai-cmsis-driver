@@ -14,7 +14,7 @@ Synchronized into this repository under:
 
 ## Current Synchronized Revision
 
-- Upstream commit: cd2385fb621376605f4338fa3fc31e4f1366ce01
+- Upstream commit: 8a77c6a52223670a83dd090d3f484a5e2fb59432
 
 > This revision also carries explicit SPI3/4 physical mapping, hard-forced IGNROV/IGNTUR
 > containment, and raw RX-DMA OVERRUN diagnostics. This vendor copy is byte-identical

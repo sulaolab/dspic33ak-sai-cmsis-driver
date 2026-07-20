@@ -54,9 +54,9 @@ extern ARM_DRIVER_SAI Driver_SAI0;
  */
 
 /*
- * Seed the HAL config used by Control(CONFIGURE_TX/RX). The wrapper overrides only
- * the protocol/slot count (+ clock role = slave, word_bits = 32) from the CMSIS control
- * word; every other field (board electricals: BRG, fs_shape/SPIFE/CKP/CKE, MCLKEN, block
+ * Seed the HAL config used by Control(CONFIGURE_TX/RX). The wrapper derives protocol
+ * and slot count from the CMSIS control word and forces the validated slave / 32-bit
+ * transport envelope; every other field (board electricals: BRG, fs_shape/SPIFE/CKP/CKE, MCLKEN, block
  * geometry, ...) comes from here. Return false if no config is available (the weak default
  * returns false, so an integrator that has not provided one gets a clean Control() failure
  * rather than a stream on garbage geometry).

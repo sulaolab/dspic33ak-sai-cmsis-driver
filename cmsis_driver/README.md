@@ -42,7 +42,9 @@ below); it is **not** passed to the rate-agnostic HAL core.
 - `PowerControl(ARM_POWER_FULL/OFF)` — logical power + explicit block-callback
   registration on the SPI1 instance; does not start the stream. FULL also performs the
   DMA HAL's one-time `dspic33ak_dma_global_init()` (idempotent), so the integrator does
-  NOT need a separate DMA-init startup step.
+  NOT need a separate DMA-init startup step. This applies the DMA HAL's device-wide SRAM
+  arbitration policy (`BMXINITPR.DMAPR=1`); regression-test other DMA users and CPU/DSP
+  timing paths in the integrated system.
 - `Control`:
   - `ARM_SAI_CONFIGURE_TX/RX` — applies protocol/slot count via the HAL
     `inst_configure()` **while stopped**, seeded from the integrator's default config

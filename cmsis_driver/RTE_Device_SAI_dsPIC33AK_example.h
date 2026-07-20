@@ -12,10 +12,11 @@
  * Driver_SAI0 maps to the single dspic33ak_spi_i2s_tdm transport on physical SPI1.
  *
  * Validated envelope (mirrors the HAL tdm_config_is_supported()): dsPIC33AK SPI
- * SLAVE, external BCLK/FS/MCLK, 32-bit word/slot, and either I2S (2 slots) or TDM8
- * (8 slots). The wrapper seeds its config from the integrator's default config
- * (the Driver_SAI_dsPIC33AK_GetDefaultConfig() hook) and overrides only the
- * protocol/slot count from Control(CONFIGURE_*); the HAL core itself has no
+ * slave, external BCLK/FS, MCLK external-input or inactive, 32-bit word/slot, and
+ * either I2S (2 slots) or TDM8 (8 slots). The wrapper seeds its config from the
+ * integrator's default config (the Driver_SAI_dsPIC33AK_GetDefaultConfig() hook),
+ * derives protocol/slot count from Control(CONFIGURE_*), and forces slave/32-bit;
+ * the HAL core itself has no
  * default-config API. AUDIO_FREQ is not passed to the rate-agnostic HAL core -- it
  * is validated by the wrapper's rate hook (Driver_SAI_dsPIC33AK_IsSampleRateSupported).
  * The wrapper does not advertise or accept anything outside this envelope.
