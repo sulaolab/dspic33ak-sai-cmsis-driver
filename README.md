@@ -19,7 +19,7 @@ audio is carried over the **SPI peripheral in framed mode** (`AUDEN=0`,
   repository is named after its CMSIS class (`...-i2c-cmsis-driver`,
   `...-usart-cmsis-driver`, `...-can-cmsis-driver`, this `...-sai-cmsis-driver`).
 - The **underlying dsPIC33AK HAL** is the framed-SPI I2S/TDM transport
-  [dspic33ak-spi-i2s-tdm-hal](https://github.com/sulaolab/dspic33ak-spi-i2s-tdm-hal).
+  [dspic33ak-hal-spi-i2s-tdm](https://github.com/sulaolab/dspic33ak-hal-spi-i2s-tdm).
 
 In short: **SAI is the portable API; SPI/I2S/TDM is the dsPIC33AK transport that
 realises it.** All `ARM_SAI_*` / `ARM_DRIVER_*` types live in the wrapper, never
@@ -56,9 +56,9 @@ commit). Apply HAL changes upstream first, then re-sync with
 
 | Vendored under | Upstream | Role |
 |---|---|---|
-| `src/hal_spi_i2s_tdm/` | [dspic33ak-spi-i2s-tdm-hal](https://github.com/sulaolab/dspic33ak-spi-i2s-tdm-hal) | the transport the wrapper maps onto |
-| `src/hal_dma/` | [dspic33ak-dma-hal](https://github.com/sulaolab/dspic33ak-dma-hal) | DMA channel setup (required) |
-| `src/hal_timer/` | [dspic33ak-timer-hal](https://github.com/sulaolab/dspic33ak-timer-hal) | Timer2 high-res counter for the load monitor (compile/link sibling, runtime-gated) |
+| `src/hal_spi_i2s_tdm/` | [dspic33ak-hal-spi-i2s-tdm](https://github.com/sulaolab/dspic33ak-hal-spi-i2s-tdm) | the transport the wrapper maps onto |
+| `src/hal_dma/` | [dspic33ak-hal-dma](https://github.com/sulaolab/dspic33ak-hal-dma) | DMA channel setup (required) |
+| `src/hal_timer/` | [dspic33ak-hal-timer](https://github.com/sulaolab/dspic33ak-hal-timer) | Timer2 high-res counter for the load monitor (compile/link sibling, runtime-gated) |
 
 ## Integration
 

@@ -70,7 +70,7 @@ below); it is **not** passed to the rate-agnostic HAL core.
 `err_rov_block_count` / `err_tur_block_count` / `err_frm_block_count` /
 `frmerr_consecutive_blocks`, sampled once per RX block from the sticky `SPIROV`/`FRMERR` flags
 and the live `SPITUR` status (see the HAL's README,
-["DMA and SPI transport-health diagnostics"](https://github.com/sulaolab/dspic33ak-spi-i2s-tdm-hal#6-dma-and-spi-transport-health-diagnostics))
+["DMA and SPI transport-health diagnostics"](https://github.com/sulaolab/dspic33ak-hal-spi-i2s-tdm#6-dma-and-spi-transport-health-diagnostics))
 and read via `dspic33ak_spi_i2s_tdm_get_status()`. These are distinct from
 this wrapper's `tx_underflow`/`rx_overflow`, which are the wrapper's own software
 buffer-semantics events (raised when a block runs with no armed `Send`/`Receive` buffer). The

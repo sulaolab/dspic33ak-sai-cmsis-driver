@@ -5,7 +5,7 @@ required sibling of the SPI/I2S/TDM HAL).
 
 Upstream repository:
 
-- Repository: https://github.com/sulaolab/dspic33ak-dma-hal
+- Repository: https://github.com/sulaolab/dspic33ak-hal-dma
 - Branch: main
 - Source directory: src/
 

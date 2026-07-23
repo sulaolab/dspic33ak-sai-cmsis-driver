@@ -8,7 +8,7 @@ Timer HAL is not vendored here.
 
 Upstream repository:
 
-- Repository: https://github.com/sulaolab/dspic33ak-timer-hal
+- Repository: https://github.com/sulaolab/dspic33ak-hal-timer
 - Branch: main
 - Source directory: src/
 

@@ -2,9 +2,9 @@
 """Synchronize the vendored dsPIC33AK HALs from their upstream HAL repos.
 
 This CMSIS-Driver SAI wrapper vendors three sibling HALs:
-  - dspic33ak-spi-i2s-tdm-hal -> src/hal_spi_i2s_tdm/
-  - dspic33ak-dma-hal         -> src/hal_dma/
-  - dspic33ak-timer-hal       -> src/hal_timer/   (high-resolution counter only)
+  - dspic33ak-hal-spi-i2s-tdm -> src/hal_spi_i2s_tdm/
+  - dspic33ak-hal-dma         -> src/hal_dma/
+  - dspic33ak-hal-timer       -> src/hal_timer/   (high-resolution counter only)
 
 Each HAL's UPSTREAM.md records the synchronized commit and is updated in place.
 The repository-local default config src/hal_spi_i2s_tdm/dspic33ak_spi_i2s_tdm_conf.h
@@ -24,8 +24,8 @@ from pathlib import Path
 # (label, repo, branch, upstream source dir, destination dir, files)
 HALS = (
     (
-        "dspic33ak-spi-i2s-tdm-hal",
-        "https://github.com/sulaolab/dspic33ak-spi-i2s-tdm-hal.git",
+        "dspic33ak-hal-spi-i2s-tdm",
+        "https://github.com/sulaolab/dspic33ak-hal-spi-i2s-tdm.git",
         "main",
         "src",
         "src/hal_spi_i2s_tdm",
@@ -43,8 +43,8 @@ HALS = (
         ),
     ),
     (
-        "dspic33ak-dma-hal",
-        "https://github.com/sulaolab/dspic33ak-dma-hal.git",
+        "dspic33ak-hal-dma",
+        "https://github.com/sulaolab/dspic33ak-hal-dma.git",
         "main",
         "src",
         "src/hal_dma",
@@ -55,8 +55,8 @@ HALS = (
         ),
     ),
     (
-        "dspic33ak-timer-hal",
-        "https://github.com/sulaolab/dspic33ak-timer-hal.git",
+        "dspic33ak-hal-timer",
+        "https://github.com/sulaolab/dspic33ak-hal-timer.git",
         "main",
         "src",
         "src/hal_timer",
